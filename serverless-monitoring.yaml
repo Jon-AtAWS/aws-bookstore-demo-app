@@ -631,6 +631,19 @@ Resources:
     Metadata:
       'AWS::CloudFormation::Designer':
         id: e1a45038-ec76-464d-91b5-6b31bc325fa7
+  TTimer:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: !Sub '${ProjectName}-Timer'
+      AttributeDefinitions:
+        - AttributeName: timerId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: timerId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
 # ---------- ELASTICSEARCH ROLES DEFINITIONS ---------        
   ESSearchRole:
     Type: 'AWS::IAM::Role'
