@@ -55,6 +55,8 @@ Mappings:
       UpdateConfigCode: functions/UpdateConfig.zip
       XRayLayer: functions/XRayLayer.zip
       SeederFunctionCode: aws-serverless-codecommit-seeder.zip
+      UploadLogsToESCode: functions/LogsToElasticsearch.zip
+      LinkCognitoToESCode: functions/LinkCognitotoES.zip
 Resources:
 # ---------- VPC - SUBNET - SECURITY GROUPS  ---------
 
@@ -544,7 +546,8 @@ Resources:
             Action:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
       Policies:
         - PolicyName: RecommendationsLambdaRoleEC2
           PolicyDocument:
@@ -660,8 +663,9 @@ Resources:
               - 'sts:AssumeRole'
       Path: /
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
-        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
       Policies:
         - PolicyName: !Sub '${ProjectName}-lambda-policy'
           PolicyDocument:
@@ -2448,6 +2452,11 @@ Resources:
       ClientName: !Sub '${ProjectName}-client'
       GenerateSecret: false
       UserPoolId: !Ref UserPool
+  CognitoDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref AssetsBucket
+      UserPoolId: !Ref UserPool
   IdentityPool:
     Type: 'AWS::Cognito::IdentityPool'
     Properties:
@@ -2543,7 +2552,6 @@ Resources:
        - FunctionUploadBooks
        - UpdateSearchCluster
        - ElasticsearchDomain
-
 # ------------------------ FRONTEND ------------------------
   AssetsCodeRepository:
     Type: 'AWS::CodeCommit::Repository'
@@ -2996,6 +3004,126 @@ Resources:
     Metadata:
       'AWS::CloudFormation::Designer':
         id: 63b08124-fccb-4874-ab13-ce6cfe6ce885
+# ---------- MONITORING INFRASTRUCTURE ---------
+  AnalyticsElasticsearchDomain:
+      Type: 'AWS::Elasticsearch::Domain'
+      DependsOn:
+        - ESRoleCreator
+      Properties:
+        DomainName: !Sub '${ProjectName}-analytics'
+        ElasticsearchVersion: 6.2
+        ElasticsearchClusterConfig:
+          DedicatedMasterEnabled: 'false'
+          InstanceCount: '1'
+          ZoneAwarenessEnabled: 'false'
+          InstanceType: t2.small.elasticsearch
+        EBSOptions:
+          EBSEnabled: true
+          Iops: 0
+          VolumeSize: 10
+          VolumeType: gp2
+        AccessPolicies:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Principal:
+                AWS: !GetAtt CognitoAuthorizedRole.Arn
+              Action:
+                - 'es:*'
+              Resource: !Join 
+                - ''
+                - - 'arn:aws:es:'
+                  - !Ref 'AWS::Region'
+                  - ':'
+                  - !Ref 'AWS::AccountId'
+                  - ':'
+                  - domain/
+                  - !Sub '${ProjectName}-analytics'
+                  - /*
+  ESCognitoRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${ProjectName}-ESCognitoRole'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - es.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonESCognitoAccess'
+  LinkCognitoToESRole:
+    Type: 'AWS::IAM::Role'
+    DependsOn:
+      - AnalyticsElasticsearchDomain
+      - ESCognitoRole
+    Properties:
+      RoleName: !Sub '${ProjectName}-LinkCognitoToESRole'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: !Sub '${ProjectName}-LinkCognitoToESRolePolicy'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'es:UpdateElasticsearchDomainConfig'
+                Resource: !GetAtt AnalyticsElasticsearchDomain.Arn
+              - Effect: Allow
+                Action: 'iam:PassRole'
+                Resource: !GetAtt ESCognitoRole.Arn
+  LinkCognitotoES:
+    Type: 'AWS::Lambda::Function'
+    DependsOn:
+      - AnalyticsElasticsearchDomain
+    Properties:
+      FunctionName: !Sub '${ProjectName}-LinkCognitoToES'
+      Description: Link Cognito authentication to ES
+      Handler: index.handler
+      MemorySize: 256
+      Runtime: nodejs8.10
+      Role: !GetAtt 
+        - LinkCognitoToESRole
+        - Arn
+      Timeout: 120
+      Code:
+        S3Bucket: !FindInMap 
+          - S3Buckets
+          - !Ref 'AWS::Region'
+          - Bucket
+        S3Key: !FindInMap 
+          - Constants
+          - S3Keys
+          - LinkCognitoToESCode
+      Environment:
+        Variables:
+          ESDOMAIN: !Ref AnalyticsElasticsearchDomain
+          ES_CLUSTER_ROLE: !GetAtt ESCognitoRole.Arn
+          USER_POOL_ID: !Ref UserPool
+          IDENTITY_POOL_ID: !Ref IdentityPool
+  LinkCognitotoESCreator:
+    Type: 'Custom::CustomResource'
+    Properties:
+      ServiceToken: !GetAtt LinkCognitotoES.Arn
+      ParameterOne: Parameter to pass into Custom Lambda Function
+      DependsOn: 
+        - CognitoDomain
+        - LinkCognitotoES
+        - AnalyticsElasticsearchDomain
 Outputs:
   CodeRepository:
     Description: Code repository for the web application.
