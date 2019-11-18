@@ -3010,13 +3010,13 @@ Resources:
       DependsOn:
         - ESRoleCreator
       Properties:
-        DomainName: !Sub '${ProjectName}-analytics'
-        ElasticsearchVersion: 6.2
+        DomainName: !Sub '${ProjectName}-logs'
+        ElasticsearchVersion: 7.1
         ElasticsearchClusterConfig:
           DedicatedMasterEnabled: 'false'
-          InstanceCount: '1'
+          InstanceCount: '2'
           ZoneAwarenessEnabled: 'false'
-          InstanceType: t2.small.elasticsearch
+          InstanceType: m5.large.elasticsearch
         EBSOptions:
           EBSEnabled: true
           Iops: 0
@@ -3038,7 +3038,7 @@ Resources:
                   - !Ref 'AWS::AccountId'
                   - ':'
                   - domain/
-                  - !Sub '${ProjectName}-analytics'
+                  - !Sub '${ProjectName}-logs'
                   - /*
   ESCognitoRole:
     Type: 'AWS::IAM::Role'
@@ -3137,3 +3137,8 @@ Outputs:
     Value: !Sub
       - https://${Domain}
       - { Domain: !GetAtt AssetsCDN.DomainName }
+  CognitoARN:
+    Description: The ARN for the role assumed by authorized users
+    Export:
+      Name: !Sub '${ProjectName}CognitoAuthorizedRole'
+      Value: !GetAtt CognitoAuthorizedRole.Arn
