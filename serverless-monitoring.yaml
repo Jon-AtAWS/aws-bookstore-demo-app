@@ -3208,7 +3208,7 @@ Outputs:
     Description: The ARN for the role assumed by authorized users
     Export:
       Name: !Sub '${ProjectName}CognitoAuthorizedRole'
-      Value: !GetAtt CognitoAuthorizedRole.Arn
+    Value: !GetAtt CognitoAuthorizedRole.Arn
   AnalyticsDashboard:
     Description: The URL for the Kibana analytics dashboard
     Export:
