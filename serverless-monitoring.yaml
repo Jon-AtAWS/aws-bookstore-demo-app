@@ -47,16 +47,18 @@ Mappings:
       SearchCode: functions/Search.zip
       UpdateSearchCode: functions/UpdateSearchCluster.zip
       UpdateBestSellersCode: functions/UpdateBestSellers.zip
-      NeptuneLoaderCode: functions/NeptuneLoader.zip
+      NeptuneLoaderCode: functions/NeptuneLoaderV2.zip
       NeptuneIAMCode: functions/NeptuneIAM.zip
       bookstoreNeptuneS3DataPath: /data/
       booksData: data/books.json
       CreateESRoleCode: functions/CreateESRole.zip
       UpdateConfigCode: functions/UpdateConfig.zip
       XRayLayer: functions/XRayLayer.zip
+      PythonLambdaLayer: functions/PythonLambdaLayer.zip
       SeederFunctionCode: aws-serverless-codecommit-seeder.zip
       UploadLogsToESCode: functions/LogsToElasticsearch.zip
       LinkCognitoToESCode: functions/LinkCognitotoES.zip
+      DeleteBucketsCode: functions/DeleteBuckets.zip
 Resources:
 # ---------- VPC - SUBNET - SECURITY GROUPS  ---------
 
@@ -431,6 +433,8 @@ Resources:
                  - S3Keys
                  - NeptuneLoaderCode
       Description: 'Lambda function to load data into Neptune instance.'
+      Layers:
+        - !Ref PythonLambdaLayer
       Environment:
         Variables:
           neptunedb:
@@ -779,7 +783,7 @@ Resources:
           - 'GroupId'
         
 # ---------- LAMBDA STREAMING FUNCTIONS ---------      
-  XRayLayer:
+  NodeXRayLayer:
     Type: "AWS::Lambda::LayerVersion"
     Properties:
       CompatibleRuntimes:
@@ -794,6 +798,21 @@ Resources:
           - Constants
           - S3Keys
           - XRayLayer
+  PythonLambdaLayer:
+    Type: "AWS::Lambda::LayerVersion"
+    Properties:
+      CompatibleRuntimes:
+        - python3.7
+        - python3.6
+      Content:
+        S3Bucket: !FindInMap
+          - S3Buckets
+          - !Ref 'AWS::Region'
+          - Bucket
+        S3Key: !FindInMap
+          - Constants
+          - S3Keys
+          - PythonLambdaLayer
   UpdateSearchCluster:
     Type: 'AWS::Lambda::Function'
     DependsOn:
@@ -909,7 +928,7 @@ Resources:
         Variables:
           TABLE_NAME: !Sub '${ProjectName}-Orders'
       Layers:
-        - !Ref XRayLayer
+        - !Ref NodeXRayLayer
       TracingConfig:
         Mode: Active
       Code:
@@ -937,7 +956,7 @@ Resources:
         - Arn
       Timeout: 120
       Layers:
-        - !Ref XRayLayer
+        - !Ref NodeXRayLayer
       TracingConfig:
         Mode: "Active"
       Environment:
@@ -968,7 +987,7 @@ Resources:
         - Arn
       Timeout: 120
       Layers:
-        - !Ref XRayLayer
+        - !Ref NodeXRayLayer
       TracingConfig:
         Mode: Active
       Environment:
@@ -999,7 +1018,7 @@ Resources:
         - Arn
       Timeout: 120
       Layers:
-        - !Ref XRayLayer
+        - !Ref NodeXRayLayer
       TracingConfig:
         Mode: Active
       Environment:
@@ -1030,7 +1049,7 @@ Resources:
         - Arn
       Timeout: 120
       Layers:
-        - !Ref XRayLayer
+        - !Ref NodeXRayLayer
       TracingConfig:
         Mode: Active
       Environment:
@@ -1061,7 +1080,7 @@ Resources:
         - Arn
       Timeout: 120
       Layers:
-        - !Ref XRayLayer
+        - !Ref NodeXRayLayer
       TracingConfig:
         Mode: Active
       Environment:
@@ -1092,7 +1111,7 @@ Resources:
         - Arn
       Timeout: 120
       Layers:
-        - !Ref XRayLayer
+        - !Ref NodeXRayLayer
       TracingConfig:
         Mode: Active
       Environment:
@@ -1123,7 +1142,7 @@ Resources:
         - Arn
       Timeout: 120
       Layers:
-        - !Ref XRayLayer
+        - !Ref NodeXRayLayer
       TracingConfig:
         Mode: Active
       Environment:
@@ -1154,7 +1173,7 @@ Resources:
         - Arn
       Timeout: 120
       Layers:
-        - !Ref XRayLayer
+        - !Ref NodeXRayLayer
       TracingConfig:
         Mode: Active
       Environment:
@@ -1186,7 +1205,7 @@ Resources:
         - Arn
       Timeout: 120
       Layers:
-        - !Ref XRayLayer
+        - !Ref NodeXRayLayer
       TracingConfig:
         Mode: Active
       Environment:
@@ -3111,6 +3130,67 @@ Resources:
         - CognitoDomain
         - LinkCognitotoES
         - AnalyticsElasticsearchDomain
+# ---------- CLEANUP STACK ---------
+  BucketCleanupRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${ProjectName}-BucketCleanupRole'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BucketCleanupPolicy
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - 's3:List*'
+                  - 's3:DeleteObject'
+                Effect: Allow
+                Resource:
+                  - !GetAtt AssetsBucket.Arn
+                  - !GetAtt PipelineArtifactsBucket.Arn
+                  - !Join [ "", [ !GetAtt AssetsBucket.Arn , "/*" ]]
+                  - !Join [ "", [ !GetAtt PipelineArtifactsBucket.Arn , "/*" ]]
+            Version: 2012-10-17
+  BucketCleanupFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${ProjectName}-BucketCleanup'
+      Description: Cleanup S3 buckets when deleting stack
+      Handler: index.handler
+      MemorySize: 256
+      Role: !GetAtt BucketCleanupRole.Arn
+      Runtime: python3.7
+      Timeout: 30
+      Layers:
+        - !Ref PythonLambdaLayer
+      Code:
+        S3Bucket: !FindInMap 
+                    - S3Buckets
+                    - !Ref 'AWS::Region'
+                    - Bucket
+        S3Key: !FindInMap 
+                 - Constants
+                 - S3Keys
+                 - DeleteBucketsCode
+  DeleteBucketsObjects:
+    Type: 'Custom::CustomResource'
+    Properties:
+      ServiceToken: !GetAtt BucketCleanupFunction.Arn
+      BucketNames:
+        - !Ref AssetsBucket
+        - !Ref PipelineArtifactsBucket
+      DependsOn:
+        - BucketCleanupFunction
+        - BucketCleanupRole
 Outputs:
   CodeRepository:
     Description: Code repository for the web application.
@@ -3129,3 +3209,10 @@ Outputs:
     Export:
       Name: !Sub '${ProjectName}CognitoAuthorizedRole'
       Value: !GetAtt CognitoAuthorizedRole.Arn
+  AnalyticsDashboard:
+    Description: The URL for the Kibana analytics dashboard
+    Export:
+      Name: !Sub '${ProjectName}AnalyticsDashboard'
+    Value: !Sub
+      - https://${Endpoint}/_plugin/kibana/
+      - { Endpoint: !GetAtt AnalyticsElasticsearchDomain.DomainEndpoint }
