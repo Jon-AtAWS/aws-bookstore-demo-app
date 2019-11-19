@@ -3130,6 +3130,28 @@ Resources:
         - CognitoDomain
         - LinkCognitotoES
         - AnalyticsElasticsearchDomain
+# ---------- SQS Queue to support inline logging ---------
+  LoggingQueue:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: !Sub '${ProjectName}-LogQueue'
+  SQSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 'sqs:*'
+            Resource:
+              - !Ref LoggingQueue
+      RouteTableIds:
+        - !Ref bookstoreVPCRouteTable
+      ServiceName: !Join [ "" , [ "com.amazonaws.", !Ref "AWS::Region", ".sqs"]]
+      VpcId: !Ref bookstoreVPC
+
 # ---------- CLEANUP STACK ---------
   BucketCleanupRole:
     Type: 'AWS::IAM::Role'
