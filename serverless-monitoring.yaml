@@ -68,7 +68,7 @@ Resources:
       CidrBlock: '172.31.0.0/16'
       EnableDnsHostnames: "true"
       EnableDnsSupport: "true"
-  
+
   bookstoreSubnet1:
     Type: "AWS::EC2::Subnet"
     Properties:
@@ -3137,20 +3137,22 @@ Resources:
     Type: 'AWS::SQS::Queue'
     Properties:
       QueueName: !Sub '${ProjectName}-LogQueue'
+  SQSEndpointSecGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: !Sub '${ProjectName} Security group for VPC Private Endpoints'
+      SecurityGroupIngress:
+        - 
+          IpProtocol: '-1'
+          CidrIp: !GetAtt bookstoreVPC.CidrBlock
+      VpcId: !Ref bookstoreVPC
   SQSEndpoint:
+    DependsOn: SQSEndpointSecGroup
     Type: AWS::EC2::VPCEndpoint
     Properties:
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal: '*'
-            Action:
-              - 'sqs:*'
-            Resource:
-              - !Ref LoggingQueue
+      PrivateDnsEnabled: 'true'
       SecurityGroupIds:
-        - Fn::GetAtt: [bookstoreVPC, DefaultSecurityGroup]
+        - !GetAtt SQSEndpointSecGroup.GroupId
       ServiceName: !Join [ "" , [ "com.amazonaws.", !Ref "AWS::Region", ".sqs"]]
       SubnetIds:
         - !Ref bookstoreSubnet1
