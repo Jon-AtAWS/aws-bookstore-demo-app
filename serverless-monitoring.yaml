@@ -3147,9 +3147,13 @@ Resources:
               - 'sqs:*'
             Resource:
               - !Ref LoggingQueue
-      RouteTableIds:
-        - !Ref bookstoreVPCRouteTable
+      SecurityGroupIds:
+        - Fn::GetAtt: [bookstoreVPC, DefaultSecurityGroup]
       ServiceName: !Join [ "" , [ "com.amazonaws.", !Ref "AWS::Region", ".sqs"]]
+      SubnetIds:
+        - !Ref bookstoreSubnet1
+        - !Ref bookstoreSubnet2
+      VpcEndpointType: Interface
       VpcId: !Ref bookstoreVPC
 
 # ---------- CLEANUP STACK ---------
