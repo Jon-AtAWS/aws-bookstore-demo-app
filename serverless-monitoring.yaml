@@ -48,7 +48,7 @@ Mappings:
       UpdateSearchCode: functions/UpdateSearchCluster.zip
       UpdateBestSellersCode: functions/UpdateBestSellers.zip
       NeptuneLoaderCode: functions/NeptuneLoaderV2.zip
-      NeptuneIAMCode: functions/NeptuneIAM.zip
+      NeptuneIAMCode: functions/NeptuneIAMV2.zip
       bookstoreNeptuneS3DataPath: /data/
       booksData: data/books.json
       CreateESRoleCode: functions/CreateESRole.zip
@@ -333,6 +333,8 @@ Resources:
                  - S3Keys
                  - NeptuneIAMCode
       Description: 'Lambda function to add an IAM policy to a Neptune cluster to allow for bulk load.'
+      Layers:
+        - !Ref PythonLambdaLayer
       Handler: lambda_function.lambda_handler
       MemorySize: 128
       Role:
