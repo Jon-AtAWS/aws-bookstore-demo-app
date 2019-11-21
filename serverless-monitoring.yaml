@@ -44,7 +44,7 @@ Mappings:
       UploadBooksCode: functions/UploadBooks.zip
       GetRecommendationsCode: functions/GetRecommendations.zip
       GetRecommendationsByBookCode: functions/GetRecommendationsByBook.zip
-      SearchCode: functions/Search.zip
+      SearchCode: functions/SearchV2.zip
       UpdateSearchCode: functions/UpdateSearchCluster.zip
       UpdateBestSellersCode: functions/UpdateBestSellers.zip
       NeptuneLoaderCode: functions/NeptuneLoaderV2.zip
@@ -54,6 +54,8 @@ Mappings:
       CreateESRoleCode: functions/CreateESRole.zip
       UpdateConfigCode: functions/UpdateConfig.zip
       XRayLayer: functions/XRayLayer.zip
+      XRayPullerCode: functions/XRayPuller.zip
+      SQSPullerLambdaCode: functions/SQSPullerLambda.zip
       PythonLambdaLayer: functions/PythonLambdaLayer.zip
       SeederFunctionCode: aws-serverless-codecommit-seeder.zip
       UploadLogsToESCode: functions/LogsToElasticsearch.zip
@@ -1317,8 +1319,10 @@ Resources:
       Role: !GetAtt 
         - ESSearchRole
         - Arn
-      Runtime: python2.7
+      Runtime: python3.8
       Timeout: '60'
+      Layers:
+        - !Ref PythonLambdaLayer
       VpcConfig:
         SecurityGroupIds:
           - Fn::GetAtt: [bookstoreVPC, DefaultSecurityGroup]
@@ -3134,6 +3138,7 @@ Resources:
         - CognitoDomain
         - LinkCognitotoES
         - AnalyticsElasticsearchDomain
+
 # ---------- SQS Queue to support inline logging ---------
   LoggingQueue:
     Type: 'AWS::SQS::Queue'
@@ -3162,6 +3167,120 @@ Resources:
       VpcEndpointType: Interface
       VpcId: !Ref bookstoreVPC
 
+# ---------- CloudWatch Logs ---------
+  ListBooksLogGroup:
+    DependsOn: FunctionListBooks
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      RetentionInDays: 365
+      LogGroupName: !Sub '/aws/lambda/${FunctionListBooks}'
+
+# ---------- XRay Logs ---------
+  XRayPullerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${ProjectName}-XRayPullerRole'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - 'arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess'
+      Policies:
+        - PolicyName: BucketCleanupPolicy
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - 'xray:*'
+                  - 'sqs:*'
+                  - 'es:*'
+                Effect: Allow
+                Resource: '*'
+            Version: 2012-10-17
+  XRayPullerFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${ProjectName}-XRayPuller'
+      Description: Pulls X-Ray logs and sends to SQS
+      Handler: handler.handler
+      MemorySize: 512
+      Role: !GetAtt XRayPullerRole.Arn
+      Runtime: python3.8
+      Timeout: 30
+      Layers:
+        - !Ref PythonLambdaLayer
+      Code:
+        S3Bucket: !FindInMap 
+                    - S3Buckets
+                    - !Ref 'AWS::Region'
+                    - Bucket
+        S3Key: !FindInMap 
+                 - Constants
+                 - S3Keys
+                 - XRayPullerCode
+      Environment:
+        Variables:
+          ES_LOGS_ENDPOINT: !GetAtt AnalyticsElasticsearchDomain.DomainEndpoint
+          REGION: !Ref 'AWS::Region'
+          SQS_QUEUE_URL: !Ref LoggingQueue
+          PROJECT_NAME: !Ref ProjectName
+  ScheduledRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "ScheduledRule for XRayPuller"
+      ScheduleExpression: "rate(1 minute)"
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: !GetAtt XRayPullerFunction.Arn
+          Id: 'XRayPullerFunction'
+  PermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref XRayPullerFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt ScheduledRule.Arn
+  SQSPullerLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${ProjectName}-SQSPullerLambda'
+      Description: Pulls from SQS Queue
+      Handler: sqs_puller_lambda.handler
+      MemorySize: 512
+      Role: !GetAtt XRayPullerRole.Arn
+      Runtime: python3.8
+      Timeout: 30
+      Layers:
+        - !Ref PythonLambdaLayer
+      Code:
+        S3Bucket: !FindInMap 
+                    - S3Buckets
+                    - !Ref 'AWS::Region'
+                    - Bucket
+        S3Key: !FindInMap 
+                 - Constants
+                 - S3Keys
+                 - SQSPullerLambdaCode
+      Environment:
+        Variables:
+          ES_LOGS_ENDPOINT: !GetAtt AnalyticsElasticsearchDomain.DomainEndpoint
+          REGION: !Ref 'AWS::Region'
+  SQSPullerLambdaEvent:
+    Type: 'AWS::Lambda::EventSourceMapping'
+    Properties:
+      BatchSize: 1
+      Enabled: true
+      EventSourceArn: !GetAtt LoggingQueue.Arn
+      FunctionName: !GetAtt SQSPullerLambda.Arn
+      BatchSize: 1
+      StartingPosition: TRIM_HORIZON
 # ---------- CLEANUP STACK ---------
   BucketCleanupRole:
     Type: 'AWS::IAM::Role'
