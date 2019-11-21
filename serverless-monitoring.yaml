@@ -3280,7 +3280,6 @@ Resources:
       EventSourceArn: !GetAtt LoggingQueue.Arn
       FunctionName: !GetAtt SQSPullerLambda.Arn
       BatchSize: 1
-      StartingPosition: TRIM_HORIZON
 # ---------- CLEANUP STACK ---------
   BucketCleanupRole:
     Type: 'AWS::IAM::Role'
