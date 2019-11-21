@@ -692,6 +692,10 @@ Resources:
                     - /*
               - Effect: Allow
                 Action:
+                  - sqs:*
+                Resource: !GetAtt LoggingQueue.Arn
+              - Effect: Allow
+                Action:
                   - 'dynamodb:DescribeStream'
                   - 'dynamodb:GetRecords'
                   - 'dynamodb:GetShardIterator'
