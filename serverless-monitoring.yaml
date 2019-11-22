@@ -3230,7 +3230,7 @@ Resources:
                  - XRayPullerCode
       Environment:
         Variables:
-          ES_LOGS_ENDPOINT: !GetAtt AnalyticsElasticsearchDomain.DomainEndpoint
+          ES_LOGS_ENDPOINT: !Join ["", ["https://", !GetAtt AnalyticsElasticsearchDomain.DomainEndpoint]]
           REGION: !Ref 'AWS::Region'
           SQS_QUEUE_URL: !Ref LoggingQueue
           PROJECT_NAME: !Ref ProjectName
@@ -3274,7 +3274,7 @@ Resources:
                  - SQSPullerLambdaCode
       Environment:
         Variables:
-          ES_LOGS_ENDPOINT: !GetAtt AnalyticsElasticsearchDomain.DomainEndpoint
+          ES_LOGS_ENDPOINT: !Join ["", ["https://", !GetAtt AnalyticsElasticsearchDomain.DomainEndpoint]]
           REGION: !Ref 'AWS::Region'
   SQSPullerLambdaEvent:
     Type: 'AWS::Lambda::EventSourceMapping'
