@@ -1348,6 +1348,7 @@ Resources:
             - ElasticsearchDomain
             - DomainEndpoint
           REGION: !Ref 'AWS::Region'
+          SQS_QUEUE_URL: !Ref LoggingQueue
   FunctionGetBestSellers:
     Type: 'AWS::Lambda::Function'
     DependsOn:
