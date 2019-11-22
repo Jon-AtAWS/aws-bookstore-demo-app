@@ -3276,6 +3276,7 @@ Resources:
         Variables:
           ES_LOGS_ENDPOINT: !Join ["", ["https://", !GetAtt AnalyticsElasticsearchDomain.DomainEndpoint]]
           REGION: !Ref 'AWS::Region'
+          PROJECT_NAME: !Ref ProjectName
   SQSPullerLambdaEvent:
     Type: 'AWS::Lambda::EventSourceMapping'
     Properties:
