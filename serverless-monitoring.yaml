@@ -3212,7 +3212,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ProjectName}-XRayPuller'
       Description: Pulls X-Ray logs and sends to SQS
-      Handler: handler.handler
+      Handler: xray_lambda.handler
       MemorySize: 512
       Role: !GetAtt XRayPullerRole.Arn
       Runtime: python3.8
