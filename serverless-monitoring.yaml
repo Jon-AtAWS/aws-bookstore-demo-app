@@ -3,25 +3,28 @@ Parameters:
   ProjectName:
     Description: Name of the project (lowercase and under ten characters)
     Type: String
-    AllowedPattern: "^[a-z]{0,10}$"
+    AllowedPattern: "^[a-z]{0,12}$"
+    Default: mybookstore
     ConstraintDescription: Must be lowercase and under ten characters
-  SeedRepository:
-    Type: String
-    Default: 'https://s3.amazonaws.com/aws-bookstore-demo/bookstore-webapp.zip'
-
 Conditions:
   IADRegion: !Equals [!Ref "AWS::Region", "us-east-1"]
 Mappings:
   S3Buckets:
     us-east-1:
-      Bucket: aws-bookstore-monitoring-demos
+      Bucket: aws-bookstore-monitoring-demo
       NeptuneDataBucket: bookstore-neptune
       SeederFunctionBucket: fsd-aws-wildrydes-us-east-1
     us-west-2:
       Bucket: aws-bookstore-monitoring-demo-us-west-2
       NeptuneDataBucket: bookstore-neptune-us-west-2
       SeederFunctionBucket: fsd-aws-wildrydes-us-west-2
+    eu-west-1:
+      Bucket: aws-bookstore-monitoring-demo-eu-west-1
+      NeptuneDataBucket: bookstore-neptune-eu-west-1
+      SeederFunctionBucket: fsd-aws-wildrydes-eu-west-1
   Constants:
+    AppKeys:
+      SeedRepository: https://s3.amazonaws.com/aws-bookstore-demo/bookstore-webapp.zip
     S3Keys:
       ListOrdersCode: functions/ListOrders.zip
       GetBookCode: functions/GetBook.zip
@@ -36,11 +39,11 @@ Mappings:
       UploadBooksCode: functions/UploadBooks.zip
       GetRecommendationsCode: functions/GetRecommendations.zip
       GetRecommendationsByBookCode: functions/GetRecommendationsByBook.zip
-      SearchCode: functions/SearchV2.zip
+      SearchCode: functions/Search.zip
       UpdateSearchCode: functions/UpdateSearchCluster.zip
       UpdateBestSellersCode: functions/UpdateBestSellers.zip
-      NeptuneLoaderCode: functions/NeptuneLoaderV2.zip
-      NeptuneIAMCode: functions/NeptuneIAMV2.zip
+      NeptuneLoaderCode: functions/NeptuneLoader.zip
+      NeptuneIAMCode: functions/NeptuneIAM.zip
       bookstoreNeptuneS3DataPath: /data/
       booksData: data/books.json
       CreateESRoleCode: functions/CreateESRole.zip
@@ -98,14 +101,6 @@ Resources:
           - 1
           - Fn::GetAZs:
               Ref: "AWS::Region"  
-
-  bookstoreSecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
-    Properties:
-      GroupName: !Sub '${ProjectName}-SG'
-      GroupDescription: Lock cache down to webserver access only
-      VpcId: !Ref bookstoreVPC
-
   bookstoreVPCRouteTable:  
     Type: AWS::EC2::RouteTable
     Properties: 
@@ -1122,7 +1117,9 @@ Resources:
         Mode: Active
       Environment:
         Variables:
-          TABLE_NAME: !Sub '${ProjectName}-Cart'
+          TABLE_NAME: !Ref TCart
+          SQS_QUEUE_URL: !Ref LoggingQueue
+          BOOKS_TABLE: !Ref TBooks
       Code:
         S3Bucket: !FindInMap 
           - S3Buckets
@@ -1184,8 +1181,10 @@ Resources:
         Mode: Active
       Environment:
         Variables:
-          ORDERS_TABLE: !Sub '${ProjectName}-Orders'
-          CART_TABLE: !Sub '${ProjectName}-Cart'
+          ORDERS_TABLE: !Ref TOrders
+          CART_TABLE: !Ref TCart
+          BOOKS_TABLE: !Ref TBooks
+          SQS_QUEUE_URL: !Ref LoggingQueue
       Code:
         S3Bucket: !FindInMap 
           - S3Buckets
@@ -1326,7 +1325,6 @@ Resources:
       VpcConfig:
         SecurityGroupIds:
           - Fn::GetAtt: [bookstoreVPC, DefaultSecurityGroup]
-       #   - Ref: bookstoreSecurityGroup
         SubnetIds:
           - Ref: bookstoreSubnet1
       Code:
@@ -1544,7 +1542,7 @@ Resources:
       Action: 'lambda:InvokeFunction'
       FunctionName: !Ref FunctionRemoveFromCart
       Principal: apigateway.amazonaws.com
-      SourceArn: !Join 
+      SourceArn: !Join
         - ''
         - - 'arn:aws:execute-api:'
           - !Ref 'AWS::Region'
@@ -3003,7 +3001,7 @@ Resources:
         'Fn::GetAtt':
           - SeederFunction
           - Arn
-      sourceUrl: !Ref SeedRepository
+      sourceUrl: !FindInMap [Constants, AppKeys, SeedRepository]
       targetRepositoryName: !Sub '${ProjectName}-WebAssets'
       targetRepositoryRegion: '${AWS::Region}'
     Type: 'Custom::RepositorySeeder'
