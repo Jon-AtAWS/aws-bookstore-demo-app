@@ -505,6 +505,10 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
+                  - sqs:*
+                Resource: !GetAtt LoggingQueue.Arn
+              - Effect: Allow
+                Action:
                   - 'dynamodb:PutItem'
                   - 'dynamodb:Query'
                   - 'dynamodb:UpdateTable'
